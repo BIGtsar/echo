@@ -5,27 +5,28 @@ from Bio import Seq
 
 
 def check_dna(sequence):
-    """Проверка ДНК последовательности"""
+    """DNA sequence validation"""
     sequence = sequence.upper().strip()
     valid_chars = set('ACGTURYKMSWBDHVN')
 
     for char in sequence:
         if char not in valid_chars:
-            return False, f"Недопустимый символ: {char}"
+            return False, f"Invalid character: {char}"
 
     seq = Seq.Seq(sequence)
     gc = (seq.count('G') + seq.count('C')) / len(seq) * 100
 
-    return True, f"Валидно! GC-content: {gc:.1f}%"
+    return True, f"Valid! GC-content: {gc:.1f}%"
 
 
 async def handle_client(reader, writer):
-    """Обработка клиента"""
     addr = writer.get_extra_info('peername')
-    print(f"Клиент подключен: {addr}")
+    print(f"Client connected: {addr}")
 
-    writer.write("Введите ДНК последовательность (или 'exit'): ".encode())
+    writer.write("Enter DNA sequence (or 'exit'): ".encode())
     await writer.drain()
+
+    buffer = ""  # buffer for accumulating characters
 
     try:
         while True:
@@ -33,50 +34,63 @@ async def handle_client(reader, writer):
             if not data:
                 break
 
-            msg = data.decode('utf-8').strip()
-            print(f"Получено от {addr}: {msg}")
+            # Add received data to buffer
+            buffer += data.decode('utf-8')
 
-            if msg.lower() == 'exit':
-                writer.write("До свидания!\n".encode())
-                await writer.drain()
-                break
+            # If there is a newline, process
+            if '\n' in buffer or '\r' in buffer:
+                # Split by lines
+                lines = buffer.replace('\r', '\n').split('\n')
+                # Last part may be incomplete
+                buffer = lines[-1]
 
-            valid, result = check_dna(msg)
-            response = f"{result}\nВведите следующую последовательность: "
-            writer.write(response.encode())
-            await writer.drain()
+                # Process all complete lines
+                for msg in lines[:-1]:
+                    msg = msg.strip()
+                    if msg:
+                        print(f"Received from {addr}: {msg}")
+
+                        if msg.lower() == 'exit':
+                            writer.write("Goodbye!\n".encode())
+                            await writer.drain()
+                            break
+
+                        valid, result = check_dna(msg)
+                        response = f"{result}\nEnter next sequence: "
+                        writer.write(response.encode())
+                        await writer.drain()
     except:
         pass
     finally:
         writer.close()
         await writer.wait_closed()
-        print(f"Клиент отключен: {addr}")
+        print(f"Client disconnected: {addr}")
 
 
 async def main():
-    """Запуск сервера"""
+    """Server startup"""
     server = await asyncio.start_server(
         handle_client, 'localhost', 34561)
 
-    print("ДНК-сервер запущен на порту 34561")
+    print("DNA server started on port 34561")
 
     async with server:
         await server.serve_forever()
 
 
-# Простой клиент для тестирования
+# Simple client for testing
 def simple_client():
-    """Синхронный клиент для тестирования"""
+    """Synchronous client for testing"""
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect(('localhost', 34561))
 
-    # Получаем приглашение
+    # Get greeting
     print(client.recv(1024).decode(), end='')
 
     sequences = ["ATGCGAATTC", "ATGCGANTTC", "ATGCGXNTTC", "exit"]
 
     for seq in sequences:
-        print(f"Отправка: {seq}")
+        print(f"Sending: {seq}")
         client.send(f"{seq}\n".encode())
 
         response = client.recv(1024).decode()
@@ -97,4 +111,4 @@ if __name__ == "__main__":
         try:
             asyncio.run(main())
         except KeyboardInterrupt:
-            print("\nСервер остановлен")
+            print("\nServer stopped")
